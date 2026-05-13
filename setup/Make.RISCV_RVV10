@@ -1,0 +1,65 @@
+# HPCG arch config for RISC-V vector cross compilation.
+#
+# Target: rv64gcv (Linux user-mode, single-process, single-thread, no MPI, no OpenMP).
+# Toolchain: clang++ from the prave_next2 docker image's /riscv-linux installation.
+# Vector: RVV 1.0 intrinsics, gated by -DUSE_RISCV_VECTOR.
+# Output: bin/xhpcg (statically linked, runs under qemu-riscv64).
+#
+# Usage (inside the vector_benches docker image):
+#   make arch=RISCV_RVV10
+# Or override individual paths from the environment:
+#   make arch=RISCV_RVV10 LLVM=/riscv LINUX_SYSROOT=/usr/riscv64-linux-gnu
+
+SHELL        = /bin/sh
+
+CD           = cd
+CP           = cp
+LN_S         = ln -s -f
+MKDIR        = mkdir -p
+RM           = /bin/rm -f
+TOUCH        = touch
+
+TOPdir       = .
+SRCdir       = $(TOPdir)/src
+INCdir       = $(TOPdir)/src
+BINdir       = $(TOPdir)/bin
+
+# No MPI; we run single-process under qemu-user.
+MPdir        =
+MPinc        =
+MPlib        =
+
+HPCG_INCLUDES = -I$(INCdir) -I$(INCdir)/$(arch) $(MPinc)
+HPCG_LIBS     =
+
+# Single-process, single-thread, vector kernels enabled.
+HPCG_OPTS     = -DHPCG_NO_MPI -DHPCG_NO_OPENMP -DUSE_RISCV_VECTOR
+
+HPCG_DEFS     = $(HPCG_OPTS) $(HPCG_INCLUDES)
+
+# --- Toolchain (clang++ cross to rv64gcv linux-user) ---
+LLVM             ?= /riscv
+LINUX_SYSROOT    ?= /usr/riscv64-linux-gnu
+RV_TARGET        ?= riscv64-unknown-linux-gnu
+RV_MARCH         ?= rv64gcv
+RV_GCC_TOOLCHAIN ?= /usr
+
+CLANGXX      ?= $(LLVM)/bin/clang++
+
+# -fno-vectorize: keep autovectorizer off so vector code comes only from our RVV intrinsics.
+# -static: produce a self-contained ELF for qemu-user-mode execution.
+CXX          = $(CLANGXX)
+CXXFLAGS     = $(HPCG_DEFS) \
+               --target=$(RV_TARGET) \
+               --gcc-toolchain=$(RV_GCC_TOOLCHAIN) \
+               -I$(LINUX_SYSROOT)/include -L$(LINUX_SYSROOT)/lib \
+               -march=$(RV_MARCH) -mabi=lp64d \
+               -fno-vectorize \
+               -fomit-frame-pointer -O3 -funroll-loops -W -Wall
+
+LINKER       = $(CXX)
+LINKFLAGS    = $(CXXFLAGS) -static
+
+ARCHIVER     = $(LLVM)/bin/llvm-ar
+ARFLAGS      = r
+RANLIB       = $(LLVM)/bin/llvm-ranlib
