@@ -59,6 +59,18 @@ using std::endl;
 #include "CGData.hpp"
 #include "TestCG.hpp"
 #include "TestSymmetry.hpp"
+
+// ROI markers for QEMU bbv plugin (vector_benches' libbbv). These compile to
+// NOP-equivalent `addi x0, x0, N` instructions whose encodings (0x00100013 /
+// 0x00200013) the plugin sniffs to start/stop bbv collection at the official
+// HPCG timed phase. Gated by __riscv so host (x86) builds get no-ops.
+#ifdef __riscv
+#  define HPCG_ROI_START() asm volatile("addi x0, x0, 1")
+#  define HPCG_ROI_END()   asm volatile("addi x0, x0, 2")
+#else
+#  define HPCG_ROI_START()
+#  define HPCG_ROI_END()
+#endif
 #include "TestNorms.hpp"
 
 /*!
@@ -332,6 +344,7 @@ int main(int argc, char * argv[]) {
   testnorms_data.samples = numberOfCgSets;
   testnorms_data.values = new double[numberOfCgSets];
 
+  HPCG_ROI_START();
   for (int i=0; i< numberOfCgSets; ++i) {
     ZeroVector(x); // Zero out x
     ierr = CG( A, data, b, x, optMaxIters, optTolerance, niters, normr, normr0, &times[0], true);
@@ -339,6 +352,7 @@ int main(int argc, char * argv[]) {
     if (rank==0) HPCG_fout << "Call [" << i << "] Scaled Residual [" << normr/normr0 << "]" << endl;
     testnorms_data.values[i] = normr/normr0; // Record scaled residual from this run
   }
+  HPCG_ROI_END();
 
   // Compute difference between known exact solution and computed solution
   // All processors are needed here.
